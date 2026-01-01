@@ -1,7 +1,9 @@
+
 import React from 'react';
-import { X, Printer, CheckSquare, Square, FileDown, List, BarChart, UserCheck, Users, MessageSquare, PenTool, Sparkles } from 'lucide-react';
+import { X, Printer, CheckSquare, Square, FileDown, List, BarChart, UserCheck, Users, MessageSquare, PenTool, Sparkles, LayoutTemplate } from 'lucide-react';
 
 export interface PrintConfig {
+  includeHeader: boolean;
   includeStats: boolean;
   includeClassList: boolean;
   includeTeacherActivities: boolean;
@@ -30,6 +32,32 @@ const PrintSettingsModal: React.FC<PrintSettingsModalProps> = ({
 
   const toggleOption = (key: keyof PrintConfig) => {
     setConfig(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const selectAll = () => {
+    setConfig({
+      includeHeader: true,
+      includeStats: true,
+      includeClassList: true,
+      includeTeacherActivities: true,
+      includeStudentActivities: true,
+      includeOtherActivities: true,
+      includeAiSummary: true,
+      includeSignatures: true,
+    });
+  };
+
+  const deselectAll = () => {
+    setConfig({
+      includeHeader: true, // Header usually kept by default
+      includeStats: false,
+      includeClassList: false,
+      includeTeacherActivities: false,
+      includeStudentActivities: false,
+      includeOtherActivities: false,
+      includeAiSummary: false,
+      includeSignatures: false,
+    });
   };
 
   const OptionRow = ({ 
@@ -66,10 +94,10 @@ const PrintSettingsModal: React.FC<PrintSettingsModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 print:hidden animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col transform transition-all overflow-hidden">
+    <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 print:hidden animate-fade-in backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col transform transition-all overflow-hidden max-h-[90vh]">
         {/* Header */}
-        <div className="p-4 border-b border-gray-100 bg-gradient-to-r from-school-900 to-school-700 text-white flex justify-between items-center">
+        <div className="p-4 border-b border-gray-100 bg-gradient-to-r from-school-900 to-school-700 text-white flex justify-between items-center shrink-0">
           <div className="flex items-center gap-2">
             <div className="bg-white/20 p-1.5 rounded-lg">
               <FileDown className="w-5 h-5" />
@@ -84,21 +112,51 @@ const PrintSettingsModal: React.FC<PrintSettingsModalProps> = ({
           </button>
         </div>
         
+        {/* Bulk Actions */}
+        <div className="px-5 pt-4 flex gap-3 shrink-0">
+            <button onClick={selectAll} className="text-xs font-bold text-school-600 hover:bg-school-50 px-2 py-1.5 rounded transition-colors">
+              Chọn tất cả
+            </button>
+            <button onClick={deselectAll} className="text-xs font-bold text-gray-500 hover:bg-gray-100 px-2 py-1.5 rounded transition-colors">
+              Bỏ chọn tất cả
+            </button>
+        </div>
+
         {/* Body */}
-        <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Các mục hiển thị</p>
+        <div className="p-5 space-y-5 overflow-y-auto">
           
-          <OptionRow label="Thống kê sĩ số & Vắng" field="includeStats" icon={BarChart} />
-          <OptionRow label="Danh sách chi tiết các lớp" field="includeClassList" icon={List} />
-          <OptionRow label="1. Hoạt động giáo viên" field="includeTeacherActivities" icon={UserCheck} />
-          <OptionRow label="2. Hoạt động học sinh" field="includeStudentActivities" icon={Users} />
-          <OptionRow label="3. Hoạt động khác / Sự cố" field="includeOtherActivities" icon={MessageSquare} />
-          <OptionRow label="Bản tổng hợp từ AI" field="includeAiSummary" icon={Sparkles} />
-          <OptionRow label="Phần ký tên xác nhận" field="includeSignatures" icon={PenTool} />
+          {/* Group 1: General */}
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Thông tin chung</p>
+            <div className="space-y-2">
+                <OptionRow label="Tiêu đề & Tên trường" field="includeHeader" icon={LayoutTemplate} />
+                <OptionRow label="Thống kê sĩ số & Vắng" field="includeStats" icon={BarChart} />
+                <OptionRow label="Danh sách chi tiết các lớp" field="includeClassList" icon={List} />
+            </div>
+          </div>
+
+          {/* Group 2: Activities */}
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Nội dung báo cáo</p>
+             <div className="space-y-2">
+                <OptionRow label="1. Hoạt động giáo viên" field="includeTeacherActivities" icon={UserCheck} />
+                <OptionRow label="2. Hoạt động học sinh" field="includeStudentActivities" icon={Users} />
+                <OptionRow label="3. Hoạt động khác / Sự cố" field="includeOtherActivities" icon={MessageSquare} />
+                <OptionRow label="Bản tổng hợp từ AI" field="includeAiSummary" icon={Sparkles} />
+            </div>
+          </div>
+
+          {/* Group 3: Footer */}
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Chân trang</p>
+             <div className="space-y-2">
+                <OptionRow label="Phần ký tên xác nhận" field="includeSignatures" icon={PenTool} />
+            </div>
+          </div>
         </div>
         
         {/* Footer */}
-        <div className="p-4 border-t border-gray-100 bg-gray-50 flex flex-col sm:flex-row gap-3">
+        <div className="p-4 border-t border-gray-100 bg-gray-50 flex flex-col sm:flex-row gap-3 shrink-0">
           <button 
             onClick={onClose}
             className="px-4 py-2.5 text-gray-600 hover:bg-white border border-transparent hover:border-gray-200 rounded-xl font-bold transition-all flex-1"
@@ -110,7 +168,7 @@ const PrintSettingsModal: React.FC<PrintSettingsModalProps> = ({
             className="px-6 py-2.5 bg-school-600 text-white hover:bg-school-700 rounded-xl font-bold shadow-lg shadow-school-200 transition-all flex items-center justify-center gap-2 flex-[2]"
           >
             <Printer className="w-5 h-5" />
-            Xác nhận & In báo cáo
+            Xác nhận & In
           </button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { 
   Save, 
   Printer, 
@@ -12,7 +12,6 @@ import {
   FileText,
   History,
   FileDown,
-  Share2,
   Send,
   ListFilter,
   ArrowUpDown,
@@ -25,7 +24,8 @@ import {
   Palette,
   Camera,
   WifiOff,
-  Wifi
+  Wifi,
+  Download
 } from 'lucide-react';
 import { INITIAL_CLASSES, SCHOOL_NAME, SCHOOL_YEAR, REPORT_TITLE } from './constants';
 import { ClassRecord, DutyReport, SavedReport, SummaryStatus } from './types';
@@ -38,7 +38,7 @@ import AiPromptSettingsModal from './components/AiPromptSettingsModal';
 import ThemeSettingsModal from './components/ThemeSettingsModal';
 import StatisticsModal from './components/StatisticsModal';
 import Toast from './components/Toast';
-import ImageManager from './components/ImageManager';
+import ImageManager, { ImageManagerHandle } from './components/ImageManager';
 import { generateDutySummary, refineSectionText, DEFAULT_AI_INSTRUCTION } from './services/geminiService';
 import { saveReportToHistory, getReportHistory, deleteReportFromHistory } from './services/storageService';
 
@@ -59,6 +59,11 @@ const App: React.FC = () => {
   const [teacherImages, setTeacherImages] = useState<string[]>([]);
   const [studentImages, setStudentImages] = useState<string[]>([]);
   const [otherImages, setOtherImages] = useState<string[]>([]);
+
+  // Image Manager Refs
+  const teacherImgRef = useRef<ImageManagerHandle>(null);
+  const studentImgRef = useRef<ImageManagerHandle>(null);
+  const otherImgRef = useRef<ImageManagerHandle>(null);
 
   // AI State
   const [summaryStatus, setSummaryStatus] = useState<SummaryStatus>(SummaryStatus.IDLE);
@@ -83,6 +88,7 @@ const App: React.FC = () => {
   // Print Config State
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [printConfig, setPrintConfig] = useState<PrintConfig>({
+    includeHeader: true,
     includeStats: true,
     includeClassList: true,
     includeTeacherActivities: true,
@@ -169,6 +175,38 @@ const App: React.FC = () => {
     }, 100);
   };
 
+  const handleDownloadPdf = () => {
+    setToast({ show: true, message: 'Đang tạo file PDF...', type: 'success' });
+    
+    // Add PDF mode class to body to apply print styles for html2canvas
+    document.body.classList.add('pdf-mode');
+    
+    const element = document.querySelector('main');
+    const opt = {
+      margin: 5,
+      filename: `Bao_cao_truc_ban_${dutyDate}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    // @ts-ignore
+    if (window.html2pdf) {
+      // @ts-ignore
+      window.html2pdf().set(opt).from(element).save().then(() => {
+         document.body.classList.remove('pdf-mode');
+         setToast({ show: true, message: 'Đã tải xuống file PDF!', type: 'success' });
+      }).catch((err: any) => {
+         console.error(err);
+         document.body.classList.remove('pdf-mode');
+         setToast({ show: true, message: 'Lỗi khi tạo PDF. Hãy thử lại.', type: 'error' });
+      });
+    } else {
+       document.body.classList.remove('pdf-mode');
+       alert("Thư viện PDF chưa tải xong. Vui lòng thử lại sau giây lát.");
+    }
+  };
+
   const handleExportExcel = () => {
     try {
       // Byte Order Mark for UTF-8 Excel compatibility
@@ -227,48 +265,6 @@ const App: React.FC = () => {
       console.error("Export error:", error);
       setToast({ show: true, message: 'Lỗi khi xuất file Excel.', type: 'error' });
     }
-  };
-
-  const handleSendZalo = () => {
-    const totalAbsent = records.reduce((sum, r) => sum + Number(r.absentCount), 0);
-    const classesWithAbsence = records.filter(r => r.absentCount > 0);
-
-    let text = `📋 *BÁO CÁO TRỰC BAN*\n`;
-    text += `--------------------------------\n`;
-    text += `📅 Ngày: ${new Date(dutyDate).toLocaleDateString('vi-VN')} (${session})\n`;
-    text += `👤 GV trực: ${teacherName}\n\n`;
-    
-    text += `*1. TÌNH HÌNH SĨ SỐ:*\n`;
-    text += `- Tổng vắng: ${totalAbsent} em\n`;
-    if (classesWithAbsence.length > 0) {
-      classesWithAbsence.forEach(c => {
-        text += `  • Lớp ${c.className.toUpperCase()}: vắng ${c.absentCount} (${c.absentReason || 'Kro'})\n`;
-      });
-    } else {
-      text += `- Các lớp đi học đầy đủ.\n`;
-    }
-
-    text += `\n*2. HOẠT ĐỘNG GIÁO VIÊN:*\n${teacherActivities ? teacherActivities.trim() : '- Thực hiện đúng quy định.'}\n`;
-    text += `\n*3. HOẠT ĐỘNG HỌC SINH:*\n${studentActivities ? studentActivities.trim() : '- Ngoan, nề nếp tốt.'}\n`;
-    
-    if (otherActivities) {
-      text += `\n*4. SỰ CỐ / KHÁC:*\n${otherActivities.trim()}\n`;
-    }
-
-    // AI Summary if available
-    if (aiSummary) {
-      text += `\n*📝 TỔNG HỢP (AI):*\n${aiSummary}\n`;
-    }
-    
-    // Copy to clipboard
-    navigator.clipboard.writeText(text).then(() => {
-      if (confirm("Đã sao chép nội dung báo cáo!\n\nNhấn OK để mở Zalo và dán (Paste) báo cáo vào nhóm trường.")) {
-        window.open('https://zalo.me/', '_blank');
-      }
-    }).catch(err => {
-      console.error('Failed to copy: ', err);
-      setToast({ show: true, message: 'Không thể sao chép nội dung.', type: 'error' });
-    });
   };
 
   const handleSave = () => {
@@ -484,7 +480,7 @@ const App: React.FC = () => {
               className="p-2 bg-white/5 rounded-full hover:bg-white/20 transition-colors"
               title="In / Xuất PDF"
             >
-              <FileDown className="w-5 h-5" />
+              <Printer className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -492,7 +488,7 @@ const App: React.FC = () => {
 
       <main className="max-w-4xl mx-auto p-3 md:p-8 print:p-0 print:max-w-none">
         {/* Printable Header */}
-        <div className="text-center mb-6 md:mb-8 border-b-2 border-school-100 pb-6 print:border-none print:pb-2">
+        <div className={`text-center mb-6 md:mb-8 border-b-2 border-school-100 pb-6 print:border-none print:pb-2 ${!printConfig.includeHeader ? 'print:hidden' : ''}`}>
           <h2 className="text-base md:text-lg font-bold text-school-900 uppercase tracking-wide">{SCHOOL_NAME}</h2>
           <p className="text-xs md:text-sm text-gray-500 mb-2 font-medium">Năm học: {SCHOOL_YEAR}</p>
           <h1 className="text-xl md:text-3xl font-extrabold text-school-600 mt-2 md:mt-4 mb-2 uppercase">{REPORT_TITLE}</h1>
@@ -661,27 +657,37 @@ const App: React.FC = () => {
                 <span className="w-1 h-4 bg-green-500 rounded-full inline-block"></span>
                 1. Hoạt động giáo viên
               </h3>
-              <button 
-                onClick={() => handleRefineText('teacher')}
-                disabled={refiningField !== null || !teacherActivities.trim() || !isOnline}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-all print:hidden ${
-                  !isOnline 
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : refiningField === 'teacher' 
-                      ? 'bg-indigo-100 text-indigo-700 cursor-wait' 
-                      : teacherActivities.trim() 
-                        ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800'
-                        : 'bg-gray-50 text-gray-300 cursor-not-allowed'
-                }`}
-                title={isOnline ? "Sử dụng AI để viết lại văn phong sư phạm hơn" : "Cần mạng để dùng AI"}
-              >
-                {refiningField === 'teacher' ? (
-                  <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
-                ) : (
-                  <Wand2 className="w-3 h-3" />
-                )}
-                <span>{refiningField === 'teacher' ? 'Đang viết...' : 'Viết lại'}</span>
-              </button>
+              <div className="flex items-center gap-2 print:hidden">
+                <button 
+                  onClick={() => teacherImgRef.current?.openCamera()}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
+                  title="Chụp ảnh minh chứng"
+                >
+                  <Camera className="w-3 h-3" />
+                  <span>Ảnh</span>
+                </button>
+                <button 
+                  onClick={() => handleRefineText('teacher')}
+                  disabled={refiningField !== null || !teacherActivities.trim() || !isOnline}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-all ${
+                    !isOnline 
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : refiningField === 'teacher' 
+                        ? 'bg-indigo-100 text-indigo-700 cursor-wait' 
+                        : teacherActivities.trim() 
+                          ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800'
+                          : 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                  }`}
+                  title={isOnline ? "Sử dụng AI để viết lại văn phong sư phạm hơn" : "Cần mạng để dùng AI"}
+                >
+                  {refiningField === 'teacher' ? (
+                    <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
+                  ) : (
+                    <Wand2 className="w-3 h-3" />
+                  )}
+                  <span>{refiningField === 'teacher' ? 'Đang viết...' : 'Viết lại'}</span>
+                </button>
+              </div>
             </div>
             <textarea
               rows={4}
@@ -693,6 +699,7 @@ const App: React.FC = () => {
             
             {/* Image Manager for Section 1 */}
             <ImageManager 
+              ref={teacherImgRef}
               images={teacherImages} 
               onImagesChange={(imgs) => { setTeacherImages(imgs); setHasUnsavedChanges(true); }} 
               label="Hoạt động giáo viên"
@@ -710,27 +717,37 @@ const App: React.FC = () => {
                 <span className="w-1 h-4 bg-school-500 rounded-full inline-block"></span>
                 2. Hoạt động của học sinh
               </h3>
-              <button 
-                onClick={() => handleRefineText('student')}
-                disabled={refiningField !== null || !studentActivities.trim() || !isOnline}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-all print:hidden ${
-                  !isOnline 
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : refiningField === 'student' 
-                      ? 'bg-indigo-100 text-indigo-700 cursor-wait' 
-                      : studentActivities.trim() 
-                        ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800'
-                        : 'bg-gray-50 text-gray-300 cursor-not-allowed'
-                }`}
-                title={isOnline ? "Sử dụng AI để viết lại văn phong sư phạm hơn" : "Cần mạng để dùng AI"}
-              >
-                {refiningField === 'student' ? (
-                  <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
-                ) : (
-                  <Wand2 className="w-3 h-3" />
-                )}
-                <span>{refiningField === 'student' ? 'Đang viết...' : 'Viết lại'}</span>
-              </button>
+              <div className="flex items-center gap-2 print:hidden">
+                <button 
+                  onClick={() => studentImgRef.current?.openCamera()}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
+                  title="Chụp ảnh minh chứng"
+                >
+                  <Camera className="w-3 h-3" />
+                  <span>Ảnh</span>
+                </button>
+                <button 
+                  onClick={() => handleRefineText('student')}
+                  disabled={refiningField !== null || !studentActivities.trim() || !isOnline}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-all ${
+                    !isOnline 
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : refiningField === 'student' 
+                        ? 'bg-indigo-100 text-indigo-700 cursor-wait' 
+                        : studentActivities.trim() 
+                          ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800'
+                          : 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                  }`}
+                  title={isOnline ? "Sử dụng AI để viết lại văn phong sư phạm hơn" : "Cần mạng để dùng AI"}
+                >
+                  {refiningField === 'student' ? (
+                    <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
+                  ) : (
+                    <Wand2 className="w-3 h-3" />
+                  )}
+                  <span>{refiningField === 'student' ? 'Đang viết...' : 'Viết lại'}</span>
+                </button>
+              </div>
             </div>
             <textarea
               rows={4}
@@ -742,6 +759,7 @@ const App: React.FC = () => {
 
             {/* Image Manager for Section 2 */}
             <ImageManager 
+              ref={studentImgRef}
               images={studentImages} 
               onImagesChange={(imgs) => { setStudentImages(imgs); setHasUnsavedChanges(true); }} 
               label="Hoạt động học sinh"
@@ -759,27 +777,37 @@ const App: React.FC = () => {
                 <span className="w-1 h-4 bg-orange-500 rounded-full inline-block"></span>
                 3. Hoạt động khác / Sự cố
               </h3>
-              <button 
-                onClick={() => handleRefineText('other')}
-                disabled={refiningField !== null || !otherActivities.trim() || !isOnline}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-all print:hidden ${
-                  !isOnline 
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : refiningField === 'other' 
-                      ? 'bg-indigo-100 text-indigo-700 cursor-wait' 
-                      : otherActivities.trim() 
-                        ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800'
-                        : 'bg-gray-50 text-gray-300 cursor-not-allowed'
-                }`}
-                title={isOnline ? "Sử dụng AI để viết lại văn phong sư phạm hơn" : "Cần mạng để dùng AI"}
-              >
-                {refiningField === 'other' ? (
-                  <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
-                ) : (
-                  <Wand2 className="w-3 h-3" />
-                )}
-                <span>{refiningField === 'other' ? 'Đang viết...' : 'Viết lại'}</span>
-              </button>
+              <div className="flex items-center gap-2 print:hidden">
+                <button 
+                  onClick={() => otherImgRef.current?.openCamera()}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
+                  title="Chụp ảnh minh chứng"
+                >
+                  <Camera className="w-3 h-3" />
+                  <span>Ảnh</span>
+                </button>
+                <button 
+                  onClick={() => handleRefineText('other')}
+                  disabled={refiningField !== null || !otherActivities.trim() || !isOnline}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-all ${
+                    !isOnline 
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : refiningField === 'other' 
+                        ? 'bg-indigo-100 text-indigo-700 cursor-wait' 
+                        : otherActivities.trim() 
+                          ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800'
+                          : 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                  }`}
+                  title={isOnline ? "Sử dụng AI để viết lại văn phong sư phạm hơn" : "Cần mạng để dùng AI"}
+                >
+                  {refiningField === 'other' ? (
+                    <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
+                  ) : (
+                    <Wand2 className="w-3 h-3" />
+                  )}
+                  <span>{refiningField === 'other' ? 'Đang viết...' : 'Viết lại'}</span>
+                </button>
+              </div>
             </div>
             <textarea
               rows={3}
@@ -791,6 +819,7 @@ const App: React.FC = () => {
 
             {/* Image Manager for Section 3 */}
             <ImageManager 
+              ref={otherImgRef}
               images={otherImages} 
               onImagesChange={(imgs) => { setOtherImages(imgs); setHasUnsavedChanges(true); }} 
               label="Hoạt động khác"
@@ -867,21 +896,12 @@ const App: React.FC = () => {
           </button>
 
           <button
-            onClick={handleExportExcel}
-            className="flex items-center gap-2 px-3 py-3 bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 text-emerald-700 rounded-xl font-bold transition-all active:scale-95 md:px-5 flex-1 md:flex-none justify-center"
-            title="Xuất tệp Excel (CSV)"
+            onClick={handleDownloadPdf}
+            className="flex items-center gap-2 px-3 py-3 bg-red-50 border border-red-100 hover:bg-red-100 text-red-700 rounded-xl font-bold transition-all active:scale-95 md:px-5 flex-1 md:flex-none justify-center"
+            title="Tạo file PDF"
           >
-             <FileSpreadsheet className="w-5 h-5" />
-             <span className="hidden md:inline">Xuất Excel</span>
-          </button>
-
-          <button
-            onClick={handleSendZalo}
-            className="flex items-center gap-2 px-3 py-3 bg-blue-50 border border-blue-100 hover:bg-blue-100 text-blue-700 rounded-xl font-bold transition-all active:scale-95 md:px-5 flex-1 md:flex-none justify-center"
-            title="Gửi nội dung qua Zalo"
-          >
-             <Share2 className="w-5 h-5" />
-             <span className="hidden md:inline">Gửi Zalo</span>
+             <FileDown className="w-5 h-5" />
+             <span className="hidden md:inline">Lưu PDF</span>
           </button>
 
           <button 
@@ -897,8 +917,8 @@ const App: React.FC = () => {
             onClick={handleExportPdfClick}
             className="flex items-center gap-2 px-4 py-3 bg-school-600 hover:bg-school-700 text-white rounded-xl font-bold shadow-lg shadow-school-200 transition-all active:scale-95 md:px-5 flex-1 md:flex-none justify-center"
           >
-            <FileDown className="w-5 h-5" />
-            <span className="md:inline">Xuất PDF</span>
+            <Printer className="w-5 h-5" />
+            <span className="md:inline">In / Xuất</span>
           </button>
         </div>
         

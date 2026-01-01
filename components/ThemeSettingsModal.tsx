@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, Palette, Check, RotateCcw, Save } from 'lucide-react';
 
@@ -21,9 +22,22 @@ const PRESET_COLORS = [
 const ThemeSettingsModal: React.FC<ThemeSettingsModalProps> = ({ isOpen, onClose, onThemeChange }) => {
   const [selectedColor, setSelectedColor] = useState(() => localStorage.getItem('school_primary_color') || '#0ea5e9');
 
+  // Reset local state when modal opens to match current persisted theme
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedColor(localStorage.getItem('school_primary_color') || '#0ea5e9');
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const hexToRgb = (hex: string) => {
+    // Expand shorthand form (e.g. "03F") to full form (e.g. "0033FF")
+    const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+    hex = hex.replace(shorthandRegex, (m, r, g, b) => {
+      return r + r + g + g + b + b;
+    });
+
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     return result ? {
       r: parseInt(result[1], 16),
@@ -58,6 +72,20 @@ const ThemeSettingsModal: React.FC<ThemeSettingsModalProps> = ({ isOpen, onClose
 
   const handleReset = () => {
     setSelectedColor('#0ea5e9');
+  };
+
+  // Generate preview styles for the palette strip
+  const getPalettePreview = () => {
+    const rgb = hexToRgb(selectedColor);
+    const palette = [
+      { name: '50', bg: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.05)`, text: selectedColor },
+      { name: '100', bg: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.1)`, text: selectedColor },
+      { name: '500', bg: selectedColor, text: '#ffffff' },
+      { name: '600', bg: `rgb(${adjust(rgb.r, -30)}, ${adjust(rgb.g, -30)}, ${adjust(rgb.b, -30)})`, text: '#ffffff' },
+      { name: '700', bg: `rgb(${adjust(rgb.r, -60)}, ${adjust(rgb.g, -60)}, ${adjust(rgb.b, -60)})`, text: '#ffffff' },
+      { name: '900', bg: `rgb(${adjust(rgb.r, -100)}, ${adjust(rgb.g, -100)}, ${adjust(rgb.b, -100)})`, text: '#ffffff' },
+    ];
+    return palette;
   };
 
   return (
@@ -113,33 +141,34 @@ const ThemeSettingsModal: React.FC<ThemeSettingsModalProps> = ({ isOpen, onClose
             <div className="flex gap-3">
               <input 
                 type="color" 
-                value={selectedColor}
+                value={selectedColor.length === 7 ? selectedColor : '#000000'} 
                 onChange={(e) => setSelectedColor(e.target.value)}
-                className="w-12 h-12 rounded-lg cursor-pointer border-none bg-transparent"
+                className="w-12 h-12 rounded-lg cursor-pointer border-none bg-transparent p-0 overflow-hidden"
               />
               <input 
                 type="text"
                 value={selectedColor.toUpperCase()}
                 onChange={(e) => setSelectedColor(e.target.value)}
-                className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-gray-200 outline-none"
+                className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-gray-200 outline-none uppercase"
                 placeholder="#000000"
+                maxLength={7}
               />
             </div>
           </div>
 
-          {/* Preview */}
-          <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Xem trước</p>
-            <div className="space-y-3">
-              <button className="w-full py-2 px-4 rounded-lg font-bold text-white shadow-md text-sm transition-all" style={{ backgroundColor: selectedColor }}>
-                Nút Bấm Mẫu
-              </button>
-              <div className="flex gap-2">
-                <div className="w-8 h-8 rounded-lg" style={{ backgroundColor: `rgba(${hexToRgb(selectedColor).r}, ${hexToRgb(selectedColor).g}, ${hexToRgb(selectedColor).b}, 0.1)` }} />
-                <div className="flex-1 h-8 rounded-lg border-2" style={{ borderColor: selectedColor, color: selectedColor, display: 'flex', alignItems: 'center', paddingLeft: '8px', fontSize: '12px', fontWeight: 'bold' }}>
-                  Đường viền mẫu
+          {/* Palette Preview */}
+          <div className="pt-2">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Bảng màu tự động</p>
+            <div className="flex rounded-xl overflow-hidden shadow-sm h-12 border border-gray-100">
+              {getPalettePreview().map((shade) => (
+                <div 
+                  key={shade.name}
+                  className="flex-1 flex items-end justify-center pb-1 text-[10px] font-bold transition-colors"
+                  style={{ backgroundColor: shade.bg, color: shade.text === '#ffffff' ? 'rgba(255,255,255,0.9)' : shade.text }}
+                >
+                  {shade.name}
                 </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>

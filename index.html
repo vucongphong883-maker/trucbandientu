@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="vi">
   <head>
@@ -15,6 +14,7 @@
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3211/3211183.png" />
 
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script>
       // Boot script to apply saved theme immediately
       (function() {
@@ -109,6 +109,14 @@
         body { font-size: 12pt; background: white; }
         input, textarea { border: none; background: transparent; resize: none; }
       }
+
+      /* PDF Generation Mode Styles - mimic print styles for html2canvas */
+      .pdf-mode .print\:hidden { display: none !important; }
+      .pdf-mode .print\:block { display: block !important; }
+      .pdf-mode .print\:flex { display: flex !important; }
+      .pdf-mode .no-print { display: none !important; }
+      .pdf-mode input, .pdf-mode textarea { border: none !important; background: transparent !important; padding: 0 !important; }
+      .pdf-mode { background: white !important; }
     </style>
   <script type="importmap">
 {

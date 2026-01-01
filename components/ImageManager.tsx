@@ -1,7 +1,11 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { Camera, X, Image as ImageIcon, Plus, Eye } from 'lucide-react';
 import ImageViewer from './ImageViewer';
+
+export interface ImageManagerHandle {
+  openCamera: () => void;
+}
 
 interface ImageManagerProps {
   images: string[];
@@ -10,17 +14,23 @@ interface ImageManagerProps {
   maxImages?: number;
 }
 
-const ImageManager: React.FC<ImageManagerProps> = ({ 
+const ImageManager = forwardRef<ImageManagerHandle, ImageManagerProps>(({ 
   images = [], 
   onImagesChange, 
   label, 
   maxImages = 4 
-}) => {
+}, ref) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [viewerState, setViewerState] = useState<{isOpen: boolean, index: number}>({
     isOpen: false,
     index: 0
   });
+
+  useImperativeHandle(ref, () => ({
+    openCamera: () => {
+      fileInputRef.current?.click();
+    }
+  }));
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -134,6 +144,6 @@ const ImageManager: React.FC<ImageManagerProps> = ({
       />
     </div>
   );
-};
+});
 
 export default ImageManager;
