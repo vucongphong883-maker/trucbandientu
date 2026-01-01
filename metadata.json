@@ -1,5 +1,5 @@
 {
-  "name": "Sổ Trực Ban Số Hóa",
+  "name": "so_truc_ban_dien_tu",
   "description": "Ứng dụng Sổ Trực Ban điện tử dành cho giáo viên Trường THCS Phượng Sơn Số 2, hỗ trợ nhập liệu nhanh, tính toán tự động và tổng hợp báo cáo bằng AI.",
   "requestFramePermissions": [
     "camera"
