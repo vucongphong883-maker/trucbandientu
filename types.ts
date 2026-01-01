@@ -1,3 +1,4 @@
+
 export interface ClassRecord {
   id: string;
   className: string;
@@ -5,6 +6,7 @@ export interface ClassRecord {
   absentCount: number; // Học sinh vắng
   absentReason: string; // Lý do
   homeroomTeacher: string; // GVCN
+  notes?: string; // Ghi chú thêm
 }
 
 export interface DutyReport {
@@ -15,6 +17,9 @@ export interface DutyReport {
   teacherActivities: string; // Hoạt động giáo viên
   studentActivities: string;
   otherActivities: string;
+  teacherImages?: string[];
+  studentImages?: string[];
+  otherImages?: string[];
 }
 
 export interface SavedReport extends DutyReport {
