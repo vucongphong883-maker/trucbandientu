@@ -76,17 +76,17 @@ const ImageManager = forwardRef<ImageManagerHandle, ImageManagerProps>(({
       {/* Label for print view */}
       <p className="hidden print:block text-[10px] font-bold text-gray-400 uppercase mb-2">Ảnh minh chứng:</p>
       
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 print:grid-cols-3 print:gap-4">
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 print:grid-cols-3 print:gap-4 image-grid-container">
         {images.map((img, idx) => (
           <div 
             key={idx} 
-            className="relative group aspect-square cursor-pointer overflow-hidden rounded-xl border border-gray-100 shadow-sm transition-all hover:shadow-md hover:border-school-200 print:rounded-none print:border-gray-300 print:shadow-none"
+            className="relative group aspect-square cursor-pointer overflow-hidden rounded-xl border border-gray-100 shadow-sm transition-all hover:shadow-md hover:border-school-200 print:rounded-none print:border-gray-300 print:shadow-none image-item"
             onClick={() => openViewer(idx)}
           >
             <img 
               src={img} 
               alt={`${label} evidence ${idx}`} 
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 pdf-image"
             />
             
             {/* Hover Overlay */}

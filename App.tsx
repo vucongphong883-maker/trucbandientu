@@ -25,7 +25,8 @@ import {
   Camera,
   WifiOff,
   Wifi,
-  Download
+  Download,
+  Share2
 } from 'lucide-react';
 import { INITIAL_CLASSES, SCHOOL_NAME, SCHOOL_YEAR, REPORT_TITLE } from './constants';
 import { ClassRecord, DutyReport, SavedReport, SummaryStatus } from './types';
@@ -37,6 +38,7 @@ import PrintSettingsModal, { PrintConfig } from './components/PrintSettingsModal
 import AiPromptSettingsModal from './components/AiPromptSettingsModal';
 import ThemeSettingsModal from './components/ThemeSettingsModal';
 import StatisticsModal from './components/StatisticsModal';
+import ShareModal from './components/ShareModal';
 import Toast from './components/Toast';
 import ImageManager, { ImageManagerHandle } from './components/ImageManager';
 import { generateDutySummary, refineSectionText, DEFAULT_AI_INSTRUCTION } from './services/geminiService';
@@ -97,6 +99,10 @@ const App: React.FC = () => {
     includeAiSummary: true,
     includeSignatures: true,
   });
+  
+  // Share State
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: keyof ClassRecord; direction: 'asc' | 'desc' } | null>(null);
@@ -175,96 +181,159 @@ const App: React.FC = () => {
     }, 100);
   };
 
-  const handleDownloadPdf = () => {
-    setToast({ show: true, message: 'Đang tạo file PDF...', type: 'success' });
-    
-    // Add PDF mode class to body to apply print styles for html2canvas
-    document.body.classList.add('pdf-mode');
-    
-    const element = document.querySelector('main');
-    const opt = {
-      margin: 5,
-      filename: `Bao_cao_truc_ban_${dutyDate}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, letterRendering: true },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-
-    // @ts-ignore
-    if (window.html2pdf) {
-      // @ts-ignore
-      window.html2pdf().set(opt).from(element).save().then(() => {
-         document.body.classList.remove('pdf-mode');
-         setToast({ show: true, message: 'Đã tải xuống file PDF!', type: 'success' });
-      }).catch((err: any) => {
-         console.error(err);
-         document.body.classList.remove('pdf-mode');
-         setToast({ show: true, message: 'Lỗi khi tạo PDF. Hãy thử lại.', type: 'error' });
-      });
+  // Shared function to handle file sharing or downloading
+  const performShareOrDownload = async (file: File) => {
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: 'Báo cáo trực ban',
+          text: `Báo cáo trực ban ngày ${new Date(dutyDate).toLocaleDateString('vi-VN')}`
+        });
+        setToast({ show: true, message: 'Đã chia sẻ thành công!', type: 'success' });
+      } catch (error) {
+        if ((error as any).name !== 'AbortError') {
+          console.error('Share failed', error);
+          // Fallback to download
+          const url = URL.createObjectURL(file);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = file.name;
+          link.click();
+          setToast({ show: true, message: 'Đã tải xuống file (Thiết bị không hỗ trợ chia sẻ trực tiếp).', type: 'success' });
+        }
+      }
     } else {
-       document.body.classList.remove('pdf-mode');
-       alert("Thư viện PDF chưa tải xong. Vui lòng thử lại sau giây lát.");
+      // Direct Download
+      const url = URL.createObjectURL(file);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.name;
+      link.click();
+      setToast({ show: true, message: 'Đã tải xuống file thành công!', type: 'success' });
     }
   };
 
-  const handleExportExcel = () => {
+  const handleShareFile = async (type: 'pdf' | 'excel') => {
+    setIsSharing(true);
+    
     try {
-      // Byte Order Mark for UTF-8 Excel compatibility
-      const BOM = '\uFEFF';
-      let csvContent = `${SCHOOL_NAME}\n`;
-      csvContent += `Năm học: ${SCHOOL_YEAR}\n`;
-      csvContent += `${REPORT_TITLE}\n\n`;
-      csvContent += `Thông tin báo cáo:\n`;
-      csvContent += `Ngày: ${new Date(dutyDate).toLocaleDateString('vi-VN')}, Buổi: ${session}\n`;
-      csvContent += `Giáo viên trực: ${teacherName}\n\n`;
-      
-      // Table Header
-      csvContent += "STT,Lớp,Sĩ số,Số vắng,Lý do,GV Chủ nhiệm,Ghi chú chi tiết\n";
-      
-      // Table Content
-      records.forEach((r, index) => {
-        const row = [
-          index + 1,
-          r.className.toUpperCase(),
-          r.totalStudents,
-          r.absentCount,
-          `"${(r.absentReason || '').replace(/"/g, '""')}"`,
-          `"${(r.homeroomTeacher || '').replace(/"/g, '""')}"`,
-          `"${(r.notes || '').replace(/"/g, '""')}"`
-        ];
-        csvContent += row.join(",") + "\n";
-      });
-      
-      // Totals
-      const totalStudents = records.reduce((sum, r) => sum + (Number(r.totalStudents) || 0), 0);
-      const totalAbsent = records.reduce((sum, r) => sum + (Number(r.absentCount) || 0), 0);
-      csvContent += `,,${totalStudents},${totalAbsent},,,\n\n`;
-      
-      // Activity Sections
-      csvContent += `BÁO CÁO CÁC MỤC CHÍNH\n`;
-      csvContent += `1. Hoạt động giáo viên:,"${teacherActivities.replace(/"/g, '""')}"\n`;
-      csvContent += `2. Hoạt động học sinh:,"${studentActivities.replace(/"/g, '""')}"\n`;
-      csvContent += `3. Hoạt động khác/Sự cố:,"${otherActivities.replace(/"/g, '""')}"\n`;
+      if (type === 'pdf') {
+        // --- PDF GENERATION LOGIC ---
+        document.body.classList.add('pdf-mode');
+        
+        // Prepare UI for capture
+        const inputs = document.querySelectorAll('input');
+        inputs.forEach((input: any) => {
+          if (input.type === 'checkbox' || input.type === 'radio') {
+            if (input.checked) input.setAttribute('checked', 'checked');
+            else input.removeAttribute('checked');
+          } else {
+            input.setAttribute('value', input.value);
+          }
+        });
 
-      if (aiSummary) {
-        csvContent += `Tổng hợp AI:,"${aiSummary.replace(/"/g, '""')}"\n`;
+        const textareas = document.querySelectorAll('textarea');
+        const originalHeights: string[] = [];
+        textareas.forEach((ta: any) => {
+          originalHeights.push(ta.style.height);
+          ta.style.height = 'auto';
+          ta.style.height = (ta.scrollHeight + 5) + 'px';
+        });
+
+        const element = document.getElementById('report-content');
+        
+        // A4 configuration
+        const opt = {
+          margin: [15, 15, 15, 15], // Top, Left, Bottom, Right in mm
+          filename: `Bao_cao_truc_ban_${dutyDate}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { 
+            scale: 2, // High resolution
+            useCORS: true, 
+            scrollY: 0,
+            // Ensure content width fits A4 width @ 96dpi approx 794px, 
+            // but margin handles the cutting. We rely on CSS fluid width inside the container.
+            letterRendering: true,
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+        };
+
+        // @ts-ignore
+        if (window.html2pdf) {
+          // @ts-ignore
+          const pdfBlob = await window.html2pdf().set(opt).from(element).output('blob');
+          const file = new File([pdfBlob], `Bao_cao_truc_ban_${dutyDate}.pdf`, { type: 'application/pdf' });
+          
+          // Clean up UI
+          document.body.classList.remove('pdf-mode');
+          textareas.forEach((ta: any, index) => {
+             ta.style.height = originalHeights[index];
+          });
+
+          await performShareOrDownload(file);
+        } else {
+           throw new Error("Thư viện PDF chưa sẵn sàng");
+        }
+
+      } else {
+        // --- EXCEL/CSV GENERATION LOGIC ---
+        const BOM = '\uFEFF';
+        let csvContent = `${SCHOOL_NAME}\n`;
+        csvContent += `Năm học: ${SCHOOL_YEAR}\n`;
+        csvContent += `${REPORT_TITLE}\n\n`;
+        csvContent += `Thông tin báo cáo:\n`;
+        csvContent += `Ngày: ${new Date(dutyDate).toLocaleDateString('vi-VN')}, Buổi: ${session}\n`;
+        csvContent += `Giáo viên trực: ${teacherName}\n\n`;
+        
+        csvContent += "STT,Lớp,Sĩ số,Số vắng,Lý do,GV Chủ nhiệm,Ghi chú chi tiết\n";
+        
+        records.forEach((r, index) => {
+          const row = [
+            index + 1,
+            r.className.toUpperCase(),
+            r.totalStudents,
+            r.absentCount,
+            `"${(r.absentReason || '').replace(/"/g, '""')}"`,
+            `"${(r.homeroomTeacher || '').replace(/"/g, '""')}"`,
+            `"${(r.notes || '').replace(/"/g, '""')}"`
+          ];
+          csvContent += row.join(",") + "\n";
+        });
+        
+        const totalStudents = records.reduce((sum, r) => sum + (Number(r.totalStudents) || 0), 0);
+        const totalAbsent = records.reduce((sum, r) => sum + (Number(r.absentCount) || 0), 0);
+        csvContent += `,,${totalStudents},${totalAbsent},,,\n\n`;
+        
+        csvContent += `BÁO CÁO CÁC MỤC CHÍNH\n`;
+        csvContent += `1. Hoạt động giáo viên:,"${teacherActivities.replace(/"/g, '""')}"\n`;
+        csvContent += `2. Hoạt động học sinh:,"${studentActivities.replace(/"/g, '""')}"\n`;
+        csvContent += `3. Hoạt động khác/Sự cố:,"${otherActivities.replace(/"/g, '""')}"\n`;
+
+        if (aiSummary) {
+          csvContent += `Tổng hợp AI:,"${aiSummary.replace(/"/g, '""')}"\n`;
+        }
+
+        const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const file = new File([blob], `Bao_cao_truc_ban_${dutyDate}.csv`, { type: 'text/csv' });
+        
+        await performShareOrDownload(file);
       }
-
-      const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `Bao_cao_truc_ban_${dutyDate}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      setToast({ show: true, message: 'Đã xuất file Excel (CSV) thành công!', type: 'success' });
     } catch (error) {
-      console.error("Export error:", error);
-      setToast({ show: true, message: 'Lỗi khi xuất file Excel.', type: 'error' });
+      console.error(error);
+      document.body.classList.remove('pdf-mode'); // Safety cleanup
+      setToast({ show: true, message: 'Đã xảy ra lỗi khi tạo file.', type: 'error' });
+    } finally {
+      setIsSharing(false);
+      setShowShareModal(false);
     }
+  };
+
+  const handleDownloadPdf = () => {
+    // Re-use logic for direct download if needed, but handleShareFile('pdf') covers it.
+    // We'll keep this separate if the button in nav bar calls it directly without the modal.
+    handleShareFile('pdf');
   };
 
   const handleSave = () => {
@@ -487,393 +556,416 @@ const App: React.FC = () => {
       </nav>
 
       <main className="max-w-4xl mx-auto p-3 md:p-8 print:p-0 print:max-w-none">
-        {/* Printable Header */}
-        <div className={`text-center mb-6 md:mb-8 border-b-2 border-school-100 pb-6 print:border-none print:pb-2 ${!printConfig.includeHeader ? 'print:hidden' : ''}`}>
-          <h2 className="text-base md:text-lg font-bold text-school-900 uppercase tracking-wide">{SCHOOL_NAME}</h2>
-          <p className="text-xs md:text-sm text-gray-500 mb-2 font-medium">Năm học: {SCHOOL_YEAR}</p>
-          <h1 className="text-xl md:text-3xl font-extrabold text-school-600 mt-2 md:mt-4 mb-2 uppercase">{REPORT_TITLE}</h1>
-          <p className="text-gray-400 text-[10px] italic print:hidden">Mẫu báo cáo trực tuyến chuẩn hóa</p>
-        </div>
+        
+        {/* WRAPPER FOR PDF GENERATION */}
+        <div id="report-content" className="bg-white md:bg-transparent rounded-xl md:rounded-none p-2 md:p-0">
 
-        {/* Input Controls Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-5 mb-6 print:shadow-none print:border-none print:p-0">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-            <div className="space-y-4">
-              <div className="relative">
-                <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Giáo viên trực ban</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 print:hidden" />
-                  <input
-                    type="text"
-                    value={teacherName}
-                    onChange={(e) => { setTeacherName(e.target.value); setHasUnsavedChanges(true); }}
-                    placeholder="Nhập họ tên..."
-                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-school-500 focus:border-transparent outline-none transition-all print:pl-0 print:bg-transparent print:border-none print:text-lg print:font-bold print:p-0 text-base"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 md:gap-4">
-               <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Ngày trực</label>
-                <div className="relative">
-                  <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 print:hidden" />
-                  <input
-                    type="date"
-                    value={dutyDate}
-                    onChange={(e) => { setDutyDate(e.target.value); setHasUnsavedChanges(true); }}
-                    className="w-full pl-10 pr-2 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-school-500 focus:border-transparent outline-none transition-all print:hidden text-sm md:text-base"
-                  />
-                  {/* Print only date display */}
-                  <div className="hidden print:block text-black font-medium text-lg">
-                    {currentDateDisplay}
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Buổi</label>
-                <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 print:hidden">
-                    {session === 'Sáng' ? <Sun className="w-4 h-4 text-amber-500"/> : <Moon className="w-4 h-4 text-indigo-500"/>}
-                  </div>
-                  <select
-                    value={session}
-                    onChange={(e) => { setSession(e.target.value as 'Sáng' | 'Chiều'); setHasUnsavedChanges(true); }}
-                    className="w-full pl-9 pr-8 py-2.5 bg-gray-50 border border-gray-200 rounded-lg appearance-none focus:ring-2 focus:ring-school-500 outline-none transition-all print:hidden text-sm md:text-base"
-                  >
-                    <option value="Sáng">Buổi Sáng</option>
-                    <option value="Chiều">Buổi Chiều</option>
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none print:hidden" />
-                  <div className="hidden print:block text-black font-medium text-lg">
-                    {session}
-                  </div>
-                </div>
-              </div>
-            </div>
+          {/* Printable Header */}
+          <div className={`text-center mb-6 md:mb-8 border-b-2 border-school-100 pb-6 print:border-none print:pb-2 ${!printConfig.includeHeader ? 'print:hidden' : ''}`}>
+            <h2 className="text-base md:text-lg font-bold text-school-900 uppercase tracking-wide">{SCHOOL_NAME}</h2>
+            <p className="text-xs md:text-sm text-gray-500 mb-2 font-medium">Năm học: {SCHOOL_YEAR}</p>
+            <h1 className="text-xl md:text-3xl font-extrabold text-school-600 mt-2 md:mt-4 mb-2 uppercase">{REPORT_TITLE}</h1>
+            <p className="text-gray-400 text-[10px] italic print:hidden">Mẫu báo cáo trực tuyến chuẩn hóa</p>
           </div>
-        </div>
 
-        {/* Stats */}
-        <div className={!printConfig.includeStats ? 'print:hidden' : ''}>
-          <StatsSummary records={records} />
-        </div>
-
-        {/* Main List / Table */}
-        <div className={`mb-8 ${!printConfig.includeClassList ? 'print:hidden' : ''}`}>
-           <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 px-1 flex items-center gap-2 print:hidden">
-             <ListFilter className="w-3 h-3" />
-             Danh sách lớp
-           </h3>
-
-           {/* Mobile View: Cards (Hidden on Desktop, Hidden on Print) */}
-           <div className="space-y-3 md:hidden print:hidden">
-             {sortedRecords.map((record) => (
-               <MobileClassCard 
-                 key={record.id}
-                 record={record}
-                 onChange={handleRecordChange}
-               />
-             ))}
-           </div>
-
-           {/* Desktop/Print View: Table (Hidden on Mobile, Visible on Print) */}
-           <div className="hidden md:block print:block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden print:shadow-none print:border-black print:rounded-none">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-school-50 text-school-900 text-xs uppercase tracking-wider print:bg-gray-100 print:text-black">
-                    <th className="p-3 font-bold border-b border-school-100 w-12 text-center print:border-black">STT</th>
-                    
-                    {/* Sortable Headers */}
-                    <th 
-                      className="p-3 font-bold border-b border-school-100 w-16 print:border-black cursor-pointer group hover:bg-school-100/50 transition-colors"
-                      onClick={() => handleSort('className')}
-                      title="Sắp xếp theo tên lớp"
-                    >
-                      <div className="flex items-center gap-1">
-                        Lớp {getSortIcon('className')}
-                      </div>
-                    </th>
-                    
-                    <th 
-                      className="p-3 font-bold border-b border-school-100 w-20 text-center print:border-black cursor-pointer group hover:bg-school-100/50 transition-colors"
-                      onClick={() => handleSort('totalStudents')}
-                      title="Sắp xếp theo sĩ số"
-                    >
-                      <div className="flex items-center justify-center gap-1">
-                        Sĩ số {getSortIcon('totalStudents')}
-                      </div>
-                    </th>
-                    
-                    <th 
-                      className="p-3 font-bold border-b border-school-100 w-20 text-center print:border-black cursor-pointer group hover:bg-school-100/50 transition-colors"
-                      onClick={() => handleSort('absentCount')}
-                      title="Sắp xếp theo số lượng vắng"
-                    >
-                      <div className="flex items-center justify-center gap-1">
-                        Vắng {getSortIcon('absentCount')}
-                      </div>
-                    </th>
-                    
-                    <th className="p-3 font-bold border-b border-school-100 min-w-[150px] print:border-black">Lý do</th>
-                    <th className="p-3 font-bold border-b border-school-100 min-w-[120px] print:border-black">GVCN</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 print:divide-black">
-                  {sortedRecords.map((record, index) => (
-                    <ClassRow 
-                      key={record.id} 
-                      record={record} 
-                      index={index} 
-                      onChange={handleRecordChange} 
+          {/* Input Controls Section */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-5 mb-6 print:shadow-none print:border-none print:p-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+              <div className="space-y-4">
+                <div className="relative">
+                  <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Giáo viên trực ban</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 print:hidden" />
+                    <input
+                      type="text"
+                      value={teacherName}
+                      onChange={(e) => { setTeacherName(e.target.value); setHasUnsavedChanges(true); }}
+                      placeholder="Nhập họ tên..."
+                      className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-school-500 focus:border-transparent outline-none transition-all print:pl-0 print:bg-transparent print:border-none print:text-lg print:font-bold print:p-0 text-base"
                     />
-                  ))}
-                  {/* Total Row */}
-                  <tr className="bg-gray-50 font-bold print:bg-transparent print:border-t-2 print:border-black">
-                    <td colSpan={2} className="p-3 text-right uppercase text-xs text-gray-500 print:text-black">Tổng cộng</td>
-                    <td className="p-3 text-center text-school-700 print:text-black">
-                      {records.reduce((sum, r) => sum + (Number(r.totalStudents) || 0), 0)}
-                    </td>
-                    <td className="p-3 text-center text-red-600 print:text-black">
-                      {records.reduce((sum, r) => sum + (Number(r.absentCount) || 0), 0)}
-                    </td>
-                    <td colSpan={2}></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+                  </div>
+                </div>
+              </div>
 
-        {/* Activities Text Areas */}
-        <div className="grid grid-cols-1 gap-6 mb-8">
-          
-          <div className={`bg-white p-4 md:p-5 rounded-xl shadow-sm border border-gray-200 print:shadow-none print:border-none print:p-0 ${!printConfig.includeTeacherActivities ? 'print:hidden' : ''}`}>
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-sm font-bold text-school-800 uppercase flex items-center gap-2">
-                <span className="w-1 h-4 bg-green-500 rounded-full inline-block"></span>
-                1. Hoạt động giáo viên
-              </h3>
-              <div className="flex items-center gap-2 print:hidden">
-                <button 
-                  onClick={() => teacherImgRef.current?.openCamera()}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
-                  title="Chụp ảnh minh chứng"
-                >
-                  <Camera className="w-3 h-3" />
-                  <span>Ảnh</span>
-                </button>
-                <button 
-                  onClick={() => handleRefineText('teacher')}
-                  disabled={refiningField !== null || !teacherActivities.trim() || !isOnline}
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-all ${
-                    !isOnline 
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : refiningField === 'teacher' 
-                        ? 'bg-indigo-100 text-indigo-700 cursor-wait' 
-                        : teacherActivities.trim() 
-                          ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800'
-                          : 'bg-gray-50 text-gray-300 cursor-not-allowed'
-                  }`}
-                  title={isOnline ? "Sử dụng AI để viết lại văn phong sư phạm hơn" : "Cần mạng để dùng AI"}
-                >
-                  {refiningField === 'teacher' ? (
-                    <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
-                  ) : (
-                    <Wand2 className="w-3 h-3" />
-                  )}
-                  <span>{refiningField === 'teacher' ? 'Đang viết...' : 'Viết lại'}</span>
-                </button>
+              <div className="grid grid-cols-2 gap-3 md:gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Ngày trực</label>
+                  <div className="relative">
+                    <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 print:hidden" />
+                    <input
+                      type="date"
+                      value={dutyDate}
+                      onChange={(e) => { setDutyDate(e.target.value); setHasUnsavedChanges(true); }}
+                      className="w-full pl-10 pr-2 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-school-500 focus:border-transparent outline-none transition-all print:hidden text-sm md:text-base"
+                    />
+                    {/* Print/PDF only date display */}
+                    <div className="hidden print:block text-black font-medium text-lg">
+                      {currentDateDisplay}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Buổi</label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 print:hidden">
+                      {session === 'Sáng' ? <Sun className="w-4 h-4 text-amber-500"/> : <Moon className="w-4 h-4 text-indigo-500"/>}
+                    </div>
+                    <select
+                      value={session}
+                      onChange={(e) => { setSession(e.target.value as 'Sáng' | 'Chiều'); setHasUnsavedChanges(true); }}
+                      className="w-full pl-9 pr-8 py-2.5 bg-gray-50 border border-gray-200 rounded-lg appearance-none focus:ring-2 focus:ring-school-500 outline-none transition-all print:hidden text-sm md:text-base"
+                    >
+                      <option value="Sáng">Buổi Sáng</option>
+                      <option value="Chiều">Buổi Chiều</option>
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none print:hidden" />
+                    <div className="hidden print:block text-black font-medium text-lg">
+                      {session}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <textarea
-              rows={4}
-              value={teacherActivities}
-              onChange={(e) => { setTeacherActivities(e.target.value); setHasUnsavedChanges(true); }}
-              placeholder="Ghi nhận hoạt động giảng dạy, công tác chủ nhiệm..."
-              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-school-500 outline-none text-base md:text-sm leading-relaxed print:bg-transparent print:border-none print:p-0 print:resize-none"
-            ></textarea>
+          </div>
+
+          {/* Stats */}
+          <div className={!printConfig.includeStats ? 'print:hidden' : ''}>
+            <StatsSummary records={records} />
+          </div>
+
+          {/* Main List / Table */}
+          <div className={`mb-8 ${!printConfig.includeClassList ? 'print:hidden' : ''}`}>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 px-1 flex items-center gap-2 print:hidden">
+              <ListFilter className="w-3 h-3" />
+              Danh sách lớp
+            </h3>
+
+            {/* Mobile View: Cards (Hidden on Desktop, Hidden on Print) */}
+            <div className="space-y-3 md:hidden print:hidden">
+              {sortedRecords.map((record) => (
+                <MobileClassCard 
+                  key={record.id}
+                  record={record}
+                  onChange={handleRecordChange}
+                />
+              ))}
+            </div>
+
+            {/* Desktop/Print View: Table (Hidden on Mobile, Visible on Print) */}
+            <div className="hidden md:block print:block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden print:shadow-none print:border-black print:rounded-none">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-school-50 text-school-900 text-xs uppercase tracking-wider print:bg-gray-100 print:text-black">
+                      <th className="p-3 font-bold border-b border-school-100 w-12 text-center print:border-black">STT</th>
+                      
+                      {/* Sortable Headers */}
+                      <th 
+                        className="p-3 font-bold border-b border-school-100 w-16 print:border-black cursor-pointer group hover:bg-school-100/50 transition-colors"
+                        onClick={() => handleSort('className')}
+                        title="Sắp xếp theo tên lớp"
+                      >
+                        <div className="flex items-center gap-1">
+                          Lớp {getSortIcon('className')}
+                        </div>
+                      </th>
+                      
+                      <th 
+                        className="p-3 font-bold border-b border-school-100 w-20 text-center print:border-black cursor-pointer group hover:bg-school-100/50 transition-colors"
+                        onClick={() => handleSort('totalStudents')}
+                        title="Sắp xếp theo sĩ số"
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          Sĩ số {getSortIcon('totalStudents')}
+                        </div>
+                      </th>
+                      
+                      <th 
+                        className="p-3 font-bold border-b border-school-100 w-20 text-center print:border-black cursor-pointer group hover:bg-school-100/50 transition-colors"
+                        onClick={() => handleSort('absentCount')}
+                        title="Sắp xếp theo số lượng vắng"
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          Vắng {getSortIcon('absentCount')}
+                        </div>
+                      </th>
+                      
+                      <th 
+                        className="p-3 font-bold border-b border-school-100 min-w-[150px] print:border-black cursor-pointer group hover:bg-school-100/50 transition-colors"
+                        onClick={() => handleSort('absentReason')}
+                        title="Sắp xếp theo lý do"
+                      >
+                        <div className="flex items-center gap-1">
+                          Lý do {getSortIcon('absentReason')}
+                        </div>
+                      </th>
+                      <th 
+                        className="p-3 font-bold border-b border-school-100 min-w-[120px] print:border-black cursor-pointer group hover:bg-school-100/50 transition-colors"
+                        onClick={() => handleSort('homeroomTeacher')}
+                        title="Sắp xếp theo GVCN"
+                      >
+                        <div className="flex items-center gap-1">
+                          GVCN {getSortIcon('homeroomTeacher')}
+                        </div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 print:divide-black">
+                    {sortedRecords.map((record, index) => (
+                      <ClassRow 
+                        key={record.id} 
+                        record={record} 
+                        index={index} 
+                        onChange={handleRecordChange} 
+                      />
+                    ))}
+                    {/* Total Row */}
+                    <tr className="bg-gray-50 font-bold print:bg-transparent print:border-t-2 print:border-black">
+                      <td colSpan={2} className="p-3 text-right uppercase text-xs text-gray-500 print:text-black">Tổng cộng</td>
+                      <td className="p-3 text-center text-school-700 print:text-black">
+                        {records.reduce((sum, r) => sum + (Number(r.totalStudents) || 0), 0)}
+                      </td>
+                      <td className="p-3 text-center text-red-600 print:text-black">
+                        {records.reduce((sum, r) => sum + (Number(r.absentCount) || 0), 0)}
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Activities Text Areas */}
+          <div className="grid grid-cols-1 gap-6 mb-8">
             
-            {/* Image Manager for Section 1 */}
-            <ImageManager 
-              ref={teacherImgRef}
-              images={teacherImages} 
-              onImagesChange={(imgs) => { setTeacherImages(imgs); setHasUnsavedChanges(true); }} 
-              label="Hoạt động giáo viên"
-            />
-
-            {/* Dotted lines for print simulation if empty */}
-            <div className="hidden print:block text-gray-400 mt-2 leading-8">
-              {!teacherActivities && "......................................................................................................................................................................................................................................................................................."}
-            </div>
-          </div>
-
-          <div className={`bg-white p-4 md:p-5 rounded-xl shadow-sm border border-gray-200 print:shadow-none print:border-none print:p-0 ${!printConfig.includeStudentActivities ? 'print:hidden' : ''}`}>
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-sm font-bold text-school-800 uppercase flex items-center gap-2">
-                <span className="w-1 h-4 bg-school-500 rounded-full inline-block"></span>
-                2. Hoạt động của học sinh
-              </h3>
-              <div className="flex items-center gap-2 print:hidden">
-                <button 
-                  onClick={() => studentImgRef.current?.openCamera()}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
-                  title="Chụp ảnh minh chứng"
-                >
-                  <Camera className="w-3 h-3" />
-                  <span>Ảnh</span>
-                </button>
-                <button 
-                  onClick={() => handleRefineText('student')}
-                  disabled={refiningField !== null || !studentActivities.trim() || !isOnline}
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-all ${
-                    !isOnline 
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : refiningField === 'student' 
-                        ? 'bg-indigo-100 text-indigo-700 cursor-wait' 
-                        : studentActivities.trim() 
-                          ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800'
-                          : 'bg-gray-50 text-gray-300 cursor-not-allowed'
-                  }`}
-                  title={isOnline ? "Sử dụng AI để viết lại văn phong sư phạm hơn" : "Cần mạng để dùng AI"}
-                >
-                  {refiningField === 'student' ? (
-                    <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
-                  ) : (
-                    <Wand2 className="w-3 h-3" />
-                  )}
-                  <span>{refiningField === 'student' ? 'Đang viết...' : 'Viết lại'}</span>
-                </button>
-              </div>
-            </div>
-            <textarea
-              rows={4}
-              value={studentActivities}
-              onChange={(e) => { setStudentActivities(e.target.value); setHasUnsavedChanges(true); }}
-              placeholder="Ghi nhận tình hình nề nếp, vệ sinh, học tập..."
-              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-school-500 outline-none text-base md:text-sm leading-relaxed print:bg-transparent print:border-none print:p-0 print:resize-none"
-            ></textarea>
-
-            {/* Image Manager for Section 2 */}
-            <ImageManager 
-              ref={studentImgRef}
-              images={studentImages} 
-              onImagesChange={(imgs) => { setStudentImages(imgs); setHasUnsavedChanges(true); }} 
-              label="Hoạt động học sinh"
-            />
-
-            {/* Dotted lines for print simulation if empty */}
-            <div className="hidden print:block text-gray-400 mt-2 leading-8">
-              {!studentActivities && "......................................................................................................................................................................................................................................................................................."}
-            </div>
-          </div>
-
-          <div className={`bg-white p-4 md:p-5 rounded-xl shadow-sm border border-gray-200 print:shadow-none print:border-none print:p-0 ${!printConfig.includeOtherActivities ? 'print:hidden' : ''}`}>
-             <div className="flex justify-between items-center mb-3">
-              <h3 className="text-sm font-bold text-school-800 uppercase flex items-center gap-2">
-                <span className="w-1 h-4 bg-orange-500 rounded-full inline-block"></span>
-                3. Hoạt động khác / Sự cố
-              </h3>
-              <div className="flex items-center gap-2 print:hidden">
-                <button 
-                  onClick={() => otherImgRef.current?.openCamera()}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
-                  title="Chụp ảnh minh chứng"
-                >
-                  <Camera className="w-3 h-3" />
-                  <span>Ảnh</span>
-                </button>
-                <button 
-                  onClick={() => handleRefineText('other')}
-                  disabled={refiningField !== null || !otherActivities.trim() || !isOnline}
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-all ${
-                    !isOnline 
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : refiningField === 'other' 
-                        ? 'bg-indigo-100 text-indigo-700 cursor-wait' 
-                        : otherActivities.trim() 
-                          ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800'
-                          : 'bg-gray-50 text-gray-300 cursor-not-allowed'
-                  }`}
-                  title={isOnline ? "Sử dụng AI để viết lại văn phong sư phạm hơn" : "Cần mạng để dùng AI"}
-                >
-                  {refiningField === 'other' ? (
-                    <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
-                  ) : (
-                    <Wand2 className="w-3 h-3" />
-                  )}
-                  <span>{refiningField === 'other' ? 'Đang viết...' : 'Viết lại'}</span>
-                </button>
-              </div>
-            </div>
-            <textarea
-              rows={3}
-              value={otherActivities}
-              onChange={(e) => { setOtherActivities(e.target.value); setHasUnsavedChanges(true); }}
-              placeholder="Ghi nhận các vấn đề khác nếu có..."
-              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-school-500 outline-none text-base md:text-sm leading-relaxed print:bg-transparent print:border-none print:p-0 print:resize-none"
-            ></textarea>
-
-            {/* Image Manager for Section 3 */}
-            <ImageManager 
-              ref={otherImgRef}
-              images={otherImages} 
-              onImagesChange={(imgs) => { setOtherImages(imgs); setHasUnsavedChanges(true); }} 
-              label="Hoạt động khác"
-            />
-
-            <div className="hidden print:block text-gray-400 mt-2 leading-8">
-               {!otherActivities && "......................................................................................................................................................................................................................................................................................."}
-            </div>
-          </div>
-        </div>
-
-        {/* AI Assistant Section */}
-        <div className={`mb-8 ${!printConfig.includeAiSummary ? 'print:hidden' : 'print:mb-4'}`}>
-           <div className="flex justify-between items-center mb-2 px-1">
-             <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-indigo-500 print:hidden" />
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider print:hidden">
-                  Trợ lý AI tổng hợp
+            <div className={`bg-white p-4 md:p-5 rounded-xl shadow-sm border border-gray-200 print:shadow-none print:border-none print:p-0 activity-section ${!printConfig.includeTeacherActivities ? 'print:hidden' : ''}`}>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-bold text-school-800 uppercase flex items-center gap-2">
+                  <span className="w-1 h-4 bg-green-500 rounded-full inline-block"></span>
+                  1. Hoạt động giáo viên
                 </h3>
-                {!isOnline && <span className="text-[10px] text-red-500 font-bold ml-1 print:hidden">(Yêu cầu mạng)</span>}
-             </div>
-             <button 
-                onClick={() => setShowAiSettings(true)}
-                className="p-1.5 text-gray-400 hover:text-school-600 hover:bg-school-50 rounded-lg transition-all print:hidden"
-                title="Cấu hình chỉ dẫn AI"
-             >
-               <Settings className="w-4 h-4" />
-             </button>
-           </div>
-           
-           {summaryStatus === SummaryStatus.SUCCESS && aiSummary && (
-             <div className="bg-school-50/50 border border-school-100 rounded-xl p-5 mb-4 animate-fade-in print:bg-white print:border-gray-200 print:shadow-none print:p-0 print:border-none">
-               <h3 className="text-school-800 font-bold text-sm mb-2 flex items-center gap-2 print:text-black print:uppercase print:mb-1">
-                 <Sparkles className="w-4 h-4 print:hidden text-school-500" />
-                 Báo cáo tổng hợp từ AI
-               </h3>
-               <div className="text-sm text-school-900 whitespace-pre-line leading-relaxed print:text-black print:text-sm">
-                 {aiSummary}
-               </div>
-             </div>
-           )}
-        </div>
+                <div className="flex items-center gap-2 print:hidden">
+                  <button 
+                    onClick={() => teacherImgRef.current?.openCamera()}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
+                    title="Chụp ảnh minh chứng"
+                  >
+                    <Camera className="w-3 h-3" />
+                    <span>Ảnh</span>
+                  </button>
+                  <button 
+                    onClick={() => handleRefineText('teacher')}
+                    disabled={refiningField !== null || !teacherActivities.trim() || !isOnline}
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-all ${
+                      !isOnline 
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : refiningField === 'teacher' 
+                          ? 'bg-indigo-100 text-indigo-700 cursor-wait' 
+                          : teacherActivities.trim() 
+                            ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800'
+                            : 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                    }`}
+                    title={isOnline ? "Sử dụng AI để viết lại văn phong sư phạm hơn" : "Cần mạng để dùng AI"}
+                  >
+                    {refiningField === 'teacher' ? (
+                      <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
+                    ) : (
+                      <Wand2 className="w-3 h-3" />
+                    )}
+                    <span>{refiningField === 'teacher' ? 'Đang viết...' : 'Viết lại'}</span>
+                  </button>
+                </div>
+              </div>
+              <textarea
+                rows={4}
+                value={teacherActivities}
+                onChange={(e) => { setTeacherActivities(e.target.value); setHasUnsavedChanges(true); }}
+                placeholder="Ghi nhận hoạt động giảng dạy, công tác chủ nhiệm..."
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-school-500 outline-none text-base md:text-sm leading-relaxed print:bg-transparent print:border-none print:p-0 print:resize-none activity-text"
+              ></textarea>
+              
+              {/* Image Manager for Section 1 */}
+              <ImageManager 
+                ref={teacherImgRef}
+                images={teacherImages} 
+                onImagesChange={(imgs) => { setTeacherImages(imgs); setHasUnsavedChanges(true); }} 
+                label="Hoạt động giáo viên"
+              />
 
-        {/* Signatures for Print */}
-        <div className={`hidden print:flex justify-between mt-12 px-8 ${!printConfig.includeSignatures ? 'print:hidden' : ''}`}>
-           <div className="text-center">
-             <p className="italic text-sm text-gray-600">.........., ngày......tháng......năm......</p>
-             <p className="font-bold mt-2 uppercase text-sm">Người lập báo cáo</p>
-             <p className="mt-16 text-sm">{teacherName}</p>
-           </div>
-           <div className="text-center">
-             <p className="font-bold mt-8 uppercase text-sm">Ban Giám Hiệu</p>
-           </div>
-        </div>
+              {/* Dotted lines for print simulation if empty */}
+              <div className="hidden print:block text-gray-400 mt-2 leading-8">
+                {!teacherActivities && "......................................................................................................................................................................................................................................................................................."}
+              </div>
+            </div>
+
+            <div className={`bg-white p-4 md:p-5 rounded-xl shadow-sm border border-gray-200 print:shadow-none print:border-none print:p-0 activity-section ${!printConfig.includeStudentActivities ? 'print:hidden' : ''}`}>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-bold text-school-800 uppercase flex items-center gap-2">
+                  <span className="w-1 h-4 bg-school-500 rounded-full inline-block"></span>
+                  2. Hoạt động của học sinh
+                </h3>
+                <div className="flex items-center gap-2 print:hidden">
+                  <button 
+                    onClick={() => studentImgRef.current?.openCamera()}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
+                    title="Chụp ảnh minh chứng"
+                  >
+                    <Camera className="w-3 h-3" />
+                    <span>Ảnh</span>
+                  </button>
+                  <button 
+                    onClick={() => handleRefineText('student')}
+                    disabled={refiningField !== null || !studentActivities.trim() || !isOnline}
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-all ${
+                      !isOnline 
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : refiningField === 'student' 
+                          ? 'bg-indigo-100 text-indigo-700 cursor-wait' 
+                          : studentActivities.trim() 
+                            ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800'
+                            : 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                    }`}
+                    title={isOnline ? "Sử dụng AI để viết lại văn phong sư phạm hơn" : "Cần mạng để dùng AI"}
+                  >
+                    {refiningField === 'student' ? (
+                      <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
+                    ) : (
+                      <Wand2 className="w-3 h-3" />
+                    )}
+                    <span>{refiningField === 'student' ? 'Đang viết...' : 'Viết lại'}</span>
+                  </button>
+                </div>
+              </div>
+              <textarea
+                rows={4}
+                value={studentActivities}
+                onChange={(e) => { setStudentActivities(e.target.value); setHasUnsavedChanges(true); }}
+                placeholder="Ghi nhận tình hình nề nếp, vệ sinh, học tập..."
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-school-500 outline-none text-base md:text-sm leading-relaxed print:bg-transparent print:border-none print:p-0 print:resize-none activity-text"
+              ></textarea>
+
+              {/* Image Manager for Section 2 */}
+              <ImageManager 
+                ref={studentImgRef}
+                images={studentImages} 
+                onImagesChange={(imgs) => { setStudentImages(imgs); setHasUnsavedChanges(true); }} 
+                label="Hoạt động học sinh"
+              />
+
+              {/* Dotted lines for print simulation if empty */}
+              <div className="hidden print:block text-gray-400 mt-2 leading-8">
+                {!studentActivities && "......................................................................................................................................................................................................................................................................................."}
+              </div>
+            </div>
+
+            <div className={`bg-white p-4 md:p-5 rounded-xl shadow-sm border border-gray-200 print:shadow-none print:border-none print:p-0 activity-section ${!printConfig.includeOtherActivities ? 'print:hidden' : ''}`}>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-bold text-school-800 uppercase flex items-center gap-2">
+                  <span className="w-1 h-4 bg-orange-500 rounded-full inline-block"></span>
+                  3. Hoạt động khác / Sự cố
+                </h3>
+                <div className="flex items-center gap-2 print:hidden">
+                  <button 
+                    onClick={() => otherImgRef.current?.openCamera()}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
+                    title="Chụp ảnh minh chứng"
+                  >
+                    <Camera className="w-3 h-3" />
+                    <span>Ảnh</span>
+                  </button>
+                  <button 
+                    onClick={() => handleRefineText('other')}
+                    disabled={refiningField !== null || !otherActivities.trim() || !isOnline}
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-all ${
+                      !isOnline 
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : refiningField === 'other' 
+                          ? 'bg-indigo-100 text-indigo-700 cursor-wait' 
+                          : otherActivities.trim() 
+                            ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800'
+                            : 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                    }`}
+                    title={isOnline ? "Sử dụng AI để viết lại văn phong sư phạm hơn" : "Cần mạng để dùng AI"}
+                  >
+                    {refiningField === 'other' ? (
+                      <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
+                    ) : (
+                      <Wand2 className="w-3 h-3" />
+                    )}
+                    <span>{refiningField === 'other' ? 'Đang viết...' : 'Viết lại'}</span>
+                  </button>
+                </div>
+              </div>
+              <textarea
+                rows={3}
+                value={otherActivities}
+                onChange={(e) => { setOtherActivities(e.target.value); setHasUnsavedChanges(true); }}
+                placeholder="Ghi nhận các vấn đề khác nếu có..."
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-school-500 outline-none text-base md:text-sm leading-relaxed print:bg-transparent print:border-none print:p-0 print:resize-none activity-text"
+              ></textarea>
+
+              {/* Image Manager for Section 3 */}
+              <ImageManager 
+                ref={otherImgRef}
+                images={otherImages} 
+                onImagesChange={(imgs) => { setOtherImages(imgs); setHasUnsavedChanges(true); }} 
+                label="Hoạt động khác"
+              />
+
+              <div className="hidden print:block text-gray-400 mt-2 leading-8">
+                {!otherActivities && "......................................................................................................................................................................................................................................................................................."}
+              </div>
+            </div>
+          </div>
+
+          {/* AI Assistant Section */}
+          <div className={`mb-8 ${!printConfig.includeAiSummary ? 'print:hidden' : 'print:mb-4'}`}>
+            <div className="flex justify-between items-center mb-2 px-1">
+              <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-500 print:hidden" />
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider print:hidden">
+                    Trợ lý AI tổng hợp
+                  </h3>
+                  {!isOnline && <span className="text-[10px] text-red-500 font-bold ml-1 print:hidden">(Yêu cầu mạng)</span>}
+              </div>
+              <button 
+                  onClick={() => setShowAiSettings(true)}
+                  className="p-1.5 text-gray-400 hover:text-school-600 hover:bg-school-50 rounded-lg transition-all print:hidden"
+                  title="Cấu hình chỉ dẫn AI"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </div>
+            
+            {summaryStatus === SummaryStatus.SUCCESS && aiSummary && (
+              <div className="bg-school-50/50 border border-school-100 rounded-xl p-5 mb-4 animate-fade-in print:bg-white print:border-gray-200 print:shadow-none print:p-0 print:border-none">
+                <h3 className="text-school-800 font-bold text-sm mb-2 flex items-center gap-2 print:text-black print:uppercase print:mb-1">
+                  <Sparkles className="w-4 h-4 print:hidden text-school-500" />
+                  Báo cáo tổng hợp từ AI
+                </h3>
+                <div className="text-sm text-school-900 whitespace-pre-line leading-relaxed print:text-black print:text-sm">
+                  {aiSummary}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Signatures for Print */}
+          <div className={`hidden print:flex justify-between mt-12 px-8 ${!printConfig.includeSignatures ? 'print:hidden' : ''}`}>
+            <div className="text-center">
+              <p className="italic text-sm text-gray-600">.........., ngày......tháng......năm......</p>
+              <p className="font-bold mt-2 uppercase text-sm">Người lập báo cáo</p>
+              <p className="mt-16 text-sm">{teacherName}</p>
+            </div>
+            <div className="text-center">
+              <p className="font-bold mt-8 uppercase text-sm">Ban Giám Hiệu</p>
+            </div>
+          </div>
+        
+        </div> 
+        {/* END WRAPPER */}
 
         {/* Action Buttons (Sticky Bottom on Mobile) */}
         <div className="fixed bottom-0 left-0 right-0 p-3 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] flex gap-2 justify-center z-40 print:hidden md:static md:bg-transparent md:border-none md:shadow-none md:p-0 md:justify-end md:gap-3 safe-area-bottom">
@@ -896,34 +988,25 @@ const App: React.FC = () => {
           </button>
 
           <button
-            onClick={handleDownloadPdf}
-            className="flex items-center gap-2 px-3 py-3 bg-red-50 border border-red-100 hover:bg-red-100 text-red-700 rounded-xl font-bold transition-all active:scale-95 md:px-5 flex-1 md:flex-none justify-center"
-            title="Tạo file PDF"
+            onClick={() => setShowShareModal(true)}
+            className="flex items-center gap-2 px-3 py-3 bg-school-600 hover:bg-school-700 text-white rounded-xl font-bold shadow-lg shadow-school-200 transition-all active:scale-95 md:px-5 flex-1 md:flex-none justify-center"
+            title="Chia sẻ báo cáo"
           >
-             <FileDown className="w-5 h-5" />
-             <span className="hidden md:inline">Lưu PDF</span>
-          </button>
-
-          <button 
-            id="save-btn"
-            onClick={handleSave}
-            className="flex items-center gap-2 px-4 py-3 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl font-bold shadow-sm transition-all active:scale-95 md:px-5 flex-1 md:flex-none justify-center"
-          >
-            <Save className="w-5 h-5" />
-            <span className="hidden md:inline">Lưu Offline</span>
-          </button>
-
-          <button 
-            onClick={handleExportPdfClick}
-            className="flex items-center gap-2 px-4 py-3 bg-school-600 hover:bg-school-700 text-white rounded-xl font-bold shadow-lg shadow-school-200 transition-all active:scale-95 md:px-5 flex-1 md:flex-none justify-center"
-          >
-            <Printer className="w-5 h-5" />
-            <span className="md:inline">In / Xuất</span>
+             <Share2 className="w-5 h-5" />
+             <span className="md:inline">Chia sẻ</span>
           </button>
         </div>
         
         {/* Spacer for sticky bottom nav on mobile */}
         <div className="h-24 md:hidden print:hidden"></div>
+
+        {/* Share Modal */}
+        <ShareModal 
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          onShare={handleShareFile}
+          isGenerating={isSharing}
+        />
 
         {/* Statistics Modal */}
         <StatisticsModal 

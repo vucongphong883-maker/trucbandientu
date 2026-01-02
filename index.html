@@ -103,20 +103,169 @@
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-      @media print {
-        .no-print { display: none !important; }
-        .print-only { display: block !important; }
-        body { font-size: 12pt; background: white; }
-        input, textarea { border: none; background: transparent; resize: none; }
+      /* =========================================
+         PDF MODE STYLES (A4 Optimization)
+         ========================================= */
+      .pdf-mode {
+        background: white !important;
+        color: black !important;
       }
 
-      /* PDF Generation Mode Styles - mimic print styles for html2canvas */
-      .pdf-mode .print\:hidden { display: none !important; }
+      /* Force container to match A4 width logic (approx 210mm minus margins) */
+      .pdf-mode #report-content {
+        width: 100% !important; 
+        max-width: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
+        font-family: 'Times New Roman', serif !important; /* Professional Font */
+      }
+
+      /* Hide UI elements */
+      .pdf-mode .print\:hidden,
+      .pdf-mode .no-print,
+      .pdf-mode button { 
+        display: none !important; 
+      }
+      
       .pdf-mode .print\:block { display: block !important; }
       .pdf-mode .print\:flex { display: flex !important; }
-      .pdf-mode .no-print { display: none !important; }
-      .pdf-mode input, .pdf-mode textarea { border: none !important; background: transparent !important; padding: 0 !important; }
-      .pdf-mode { background: white !important; }
+      
+      /* Reset inputs/textareas to look like text */
+      .pdf-mode input, 
+      .pdf-mode textarea,
+      .pdf-mode select { 
+        border: none !important; 
+        background: transparent !important; 
+        padding: 0 !important;
+        margin: 0 !important;
+        resize: none !important;
+        box-shadow: none !important;
+        color: black !important;
+        font-family: inherit !important;
+      }
+      
+      /* Hide placeholders in PDF */
+      .pdf-mode ::placeholder {
+        color: transparent !important;
+      }
+
+      /* Ensure textareas expand */
+      .pdf-mode textarea {
+        overflow: hidden !important;
+        min-height: 1em !important;
+        display: block !important;
+        line-height: 1.5 !important;
+      }
+      
+      /* Remove cards/shadows */
+      .pdf-mode .shadow-sm, 
+      .pdf-mode .shadow-lg,
+      .pdf-mode .border,
+      .pdf-mode .rounded-xl {
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+      }
+      
+      /* Table Styling for Print */
+      .pdf-mode table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+        border: 1px solid black !important;
+        font-size: 11pt !important;
+      }
+      .pdf-mode th, 
+      .pdf-mode td {
+        border: 1px solid black !important;
+        padding: 6px 4px !important;
+        text-align: center !important; /* Default center for table */
+      }
+      .pdf-mode td:first-child { /* STT */
+         width: 40px !important;
+      }
+      .pdf-mode td:nth-child(2) { /* Class Name */
+         text-align: center !important;
+         font-weight: bold !important;
+      }
+      .pdf-mode td:nth-child(5), /* Ly do */
+      .pdf-mode td:nth-child(6) { /* GVCN */
+         text-align: left !important;
+         padding-left: 8px !important;
+      }
+      
+      /* Prevent page breaks inside rows */
+      .pdf-mode tr, 
+      .pdf-mode .avoid-break {
+        page-break-inside: avoid !important;
+      }
+
+      /* Header Styling */
+      .pdf-mode h1, .pdf-mode h2 {
+        text-align: center !important;
+        color: black !important;
+      }
+      
+      /* Sections */
+      .pdf-mode h3 {
+        color: black !important;
+        text-transform: uppercase !important;
+        font-weight: bold !important;
+        margin-top: 15px !important;
+        margin-bottom: 5px !important;
+        font-size: 12pt !important;
+        border-bottom: none !important;
+      }
+
+      /* Activities text */
+      .pdf-mode .activity-section {
+        border: 1px solid transparent !important; /* Clean up borders */
+        padding: 0 !important;
+      }
+      .pdf-mode .activity-text {
+        text-align: justify !important;
+        font-size: 12pt !important;
+        line-height: 1.6 !important;
+      }
+
+      /* =========================================
+         IMAGE OPTIMIZATION FOR PDF
+         ========================================= */
+      .pdf-mode .image-grid-container {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        justify-content: flex-start !important;
+        gap: 10px !important;
+        margin-top: 10px !important;
+      }
+      
+      .pdf-mode .image-item {
+        /* Force 2 columns with gap */
+        width: calc(50% - 10px) !important;
+        /* Reset aspect ratio constraints to prevent cropping */
+        aspect-ratio: auto !important;
+        height: auto !important;
+        /* Visuals for print */
+        border: 1px solid #ccc !important;
+        border-radius: 4px !important;
+        padding: 5px !important;
+        margin-bottom: 10px !important;
+        background: #fff !important;
+        box-shadow: none !important;
+        /* Avoid breaking inside an image block */
+        page-break-inside: avoid !important;
+        display: block !important;
+      }
+      
+      .pdf-mode .pdf-image {
+        /* Reset object fit to show full image content */
+        object-fit: contain !important;
+        width: 100% !important;
+        height: auto !important;
+        max-height: 250px !important; /* Limit max height to save space */
+        display: block !important;
+        margin: 0 auto !important;
+      }
     </style>
   <script type="importmap">
 {
